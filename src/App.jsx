@@ -1,131 +1,94 @@
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import AppSidebar from "./components/AppSidebar";
+import { useSubjects } from "./hooks/useSubjects";
 import { useTopics } from "./hooks/useTopics";
-import AddTopic from "./components/AddTopic";
-import TopicCard from "./components/TopicCard";
+import DashboardView from "./views/DashboardView";
+import ProgressView from "./views/ProgressView";
+import ReviewView from "./views/ReviewView";
+import SubjectsView from "./views/SubjectsView";
+import TopicsView from "./views/TopicsView";
+import { getReviewUpdate, getSubjectBreakdown, getTopicStats, getUniqueTopics } from "./utils/topics";
+import { isDueDate } from "./utils/date";
 
-const INTERVALS = [0, 1, 3, 7, 15, 30];
+const viewTitles = { dashboard: "Dashboard", review: "Active recall", topics: "Topics", progress: "Progress", subjects: "Subjects" };
 
 export default function App() {
-  const { topics, addNew, updateOne, remove } = useTopics();
-  const [subjects, setSubjects] = useState(["DBMS", "java", "DSA", "math"]);
-  const [filter, setFilter] = useState("All");
-  const [dark, setDark] = useState(true);
-  const [selectedSubject, setSelectedSubject] = useState("DBMS");
-  
-
-  const dueToday = topics.filter(t => {
-    const d = new Date(t.nextDate); d.setHours(0,0,0,0);
-    const today = new Date(); today.setHours(0,0,0,0);
-    return d <= today;
+  const { topics: storedTopics, addNew, updateOne, remove, streak, exportData, importData, clearAll } = useTopics();
+  const { subjects, addSubject, removeSubject, mergeSubjects } = useSubjects();
+  const [activeView, setActiveView] = useState("dashboard");
+  const [selectedSubject, setSelectedSubject] = useState("All");
+  const [search, setSearch] = useState("");
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [dark, setDark] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("recall_dark") ?? "true"); } catch { return true; }
   });
+  const importInputRef = useRef(null);
 
-  const filtered = filter === "All"? topics : topics.filter(t => t.subject === filter);
+  useEffect(() => { localStorage.setItem("recall_dark", JSON.stringify(dark)); }, [dark]);
 
-  function handleRevise(topic) {
-    const nextLevel = Math.min(topic.level + 1, 5);
-    const d = new Date(); d.setDate(d.getDate() + INTERVALS[nextLevel]);
-    updateOne(topic.id, { level: nextLevel, nextDate: d.toISOString() });
+  const topics = useMemo(() => getUniqueTopics(storedTopics), [storedTopics]);
+  const stats = useMemo(() => getTopicStats(topics), [topics]);
+  const dueTopics = useMemo(() => topics.filter((topic) => isDueDate(topic.nextDate)).sort((a, b) => new Date(a.nextDate) - new Date(b.nextDate)), [topics]);
+  const recentTopics = useMemo(() => [...topics].sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)), [topics]);
+  const filteredTopics = useMemo(() => topics.filter((topic) => {
+    const query = search.trim().toLowerCase();
+    const text = `${topic.name || topic.title || ""} ${topic.subject || ""} ${topic.notes || ""}`.toLowerCase();
+    return (selectedSubject === "All" || topic.subject === selectedSubject) && (!query || text.includes(query));
+  }), [topics, selectedSubject, search]);
+  const breakdown = useMemo(() => getSubjectBreakdown(topics, subjects), [topics, subjects]);
+
+  function navigate(view, subject) {
+    if (subject) setSelectedSubject(subject);
+    setActiveView(view);
+    setMobileMenuOpen(false);
   }
-  function handleForget(topic) {
-    updateOne(topic.id, { level: 0, nextDate: new Date().toISOString(), _t: Date.now() });
+  function addTopic(topic) {
+    const subject = topic.subject === "All" ? subjects.find((item) => item !== "All") || "General" : topic.subject;
+    if (!subjects.some((item) => item.toLowerCase() === subject.toLowerCase())) mergeSubjects([subject]);
+    addNew({ ...topic, subject });
+  }
+  function reviewTopic(topic, remembered) { updateOne(topic.id, getReviewUpdate(topic, remembered)); }
+  function removeChosenSubject(subject) { removeSubject(subject); if (selectedSubject === subject) setSelectedSubject("All"); }
+  function addNewSubject(name) { const created = addSubject(name); if (created) setSelectedSubject(created); return created; }
+  function handleImport(event) {
+    const [file] = event.target.files;
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ({ target }) => {
+      try {
+        const data = JSON.parse(target.result);
+        const imported = Array.isArray(data) ? data : data.topics;
+        if (!Array.isArray(imported)) throw new Error("Invalid data");
+        mergeSubjects(imported.map((topic) => topic.subject).filter(Boolean));
+        importData(data);
+      } catch { alert("That backup file could not be read. Please choose a Recall JSON backup."); }
+    };
+    reader.readAsText(file);
+    event.target.value = "";
   }
 
+  const pageProps = { dark, stats, dueTopics, recentTopics, onRevise: (topic) => reviewTopic(topic, true), onForget: (topic) => reviewTopic(topic, false), onDelete: remove };
+  let page;
+  if (activeView === "review") page = <ReviewView {...pageProps} />;
+  else if (activeView === "topics") page = <TopicsView {...pageProps} topics={filteredTopics} subjects={subjects} subject={selectedSubject} onSubjectChange={setSelectedSubject} search={search} onSearchChange={setSearch} onAdd={addTopic} />;
+  else if (activeView === "progress") page = <ProgressView stats={stats} breakdown={breakdown} dark={dark} />;
+  else if (activeView === "subjects") page = <SubjectsView subjects={subjects} breakdown={breakdown} onAdd={addNewSubject} onRemove={removeChosenSubject} onChoose={(subject) => { setSelectedSubject(subject); navigate("topics"); }} dark={dark} />;
+  else page = <DashboardView {...pageProps} subjects={subjects} breakdown={breakdown} selectedSubject={subjects.find((subject) => subject !== "All") || "General"} onAdd={addTopic} onNavigate={navigate} />;
+
+  const theme = dark ? "bg-[#080d19] text-stone-100" : "bg-[#f8f8f6] text-stone-900";
   return (
-    <div className={`${dark? "bg-[#0a0a0a] text-zinc-100" : "bg-[#fbfaf8] text-zinc-900"} min-h-screen antialiased`}>
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
-        *{font-family:'Inter',sans-serif}
-      .card-enter{animation:enter 0.5s cubic-bezier(0.16,1,0.3,1) both}
-        @keyframes enter{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
-      .scrollbar-none::-webkit-scrollbar{display:none}
-      .scrollbar-none{scrollbar-width:none}
-      `}</style>
-
-      <div className="max-w-2xl mx-auto px-4 py-6">
-        <div className="flex justify-between items-start mb-8 card-enter">
-          <div>
-            <div className="flex items-center gap-3">
-              <h1 className="text-[32px] font-[800] tracking-tighter">Recall.</h1>
-              <button onClick={() => setDark(!dark)} className={`w-9 h-9 rounded-full border flex items-center justify-center ${dark? "bg-zinc-800 border-zinc-700" : "bg-white border-zinc-200"}`}>{dark? "☀️" : "🌙"}</button>
-            </div>
-            <p className={`text-[13px] mt-2 ${dark? "text-zinc-400" : "text-zinc-500"}`}>Spaced repetition, but make it simple.</p>
-          </div>
-          <div className="flex gap-2">
-            <div className={`border rounded-full px-4 py-2.5 text-xs font-semibold flex items-center gap-1.5 ${dark? "bg-zinc-900 border-zinc-800" : "bg-white border-zinc-200"}`}>
-              <span className="relative flex h-2 w-2"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75"></span><span className="relative inline-flex rounded-full h-2 w-2 bg-orange-500"></span></span>
-              {dueToday.length} due
-            </div>
-            <div className="bg-zinc-900 text-white rounded-full px-4 py-2.5 text-xs font-semibold border border-zinc-800">{topics.length} total</div>
-          </div>
-        </div>
-
-        {/* ADD SUBJECT - AB YEHI SELECTOR HAI */}
-        <div className={`p-[18px] rounded-[22px] border mb-4 card-enter ${dark? "bg-zinc-900 border-zinc-800" : "bg-white border-zinc-200"}`} style={{animationDelay:'80ms'}}>
-          <p className={`text-[11px] font-bold tracking-[0.14em] uppercase mb-3 px-1 ${dark? "text-zinc-500" : "text-zinc-400"}`}>Add Subject • Click to select</p>
-          <form onSubmit={(e) => {
-            e.preventDefault();
-            const n = e.target.subject.value.trim();
-            if (n &&!subjects.includes(n)) { setSubjects([...subjects, n]); setSelectedSubject(n); e.target.reset(); }
-          }} className="flex gap-2">
-            <input name="subject"  placeholder="e.g. DBMS, CN" className={`flex-1 border rounded-full px-5 py-3 text-[14px] outline-none ${dark? "bg-zinc-800 border-zinc-700 text-white placeholder:text-zinc-500" : "bg-zinc-50 border-zinc-200"}`} />
-            <button type="submit" className={`border px-6 rounded-full text-[14px] font-semibold ${dark? "bg-white text-black border-white" : "bg-zinc-900 text-white border-zinc-900"}`}>Add</button>
-          </form>
-          <div className="flex flex-wrap gap-2 mt-4 px-1">
-            {subjects.map(s => {
-              const isSelected = selectedSubject === s;
-              return (
-                <button
-                  key={s}
-                  onClick={() => setSelectedSubject(s)}
-                  className={`group flex items-center gap-1.5 pl-4 pr-1.5 py-2 rounded-full text-[13px] font-semibold border transition-all hover:scale-105 active:scale-95
-                    ${isSelected? "bg-white text-black border-white shadow-[0_0_20px_rgba(255,255,255,0.4)]" : "bg-zinc-800 border-zinc-700 text-zinc-300 hover:border-zinc-500 hover:text-white"}`}
-                >
-                  {s}
-                  <span onClick={(e) => { e.stopPropagation(); if(confirm(`Delete "${s}"?`)){ const newSubs = subjects.filter(x => x!== s); setSubjects(newSubs); if(selectedSubject===s) setSelectedSubject(newSubs[0]||""); if(filter===s) setFilter("All"); }}} className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] ml-1 transition-colors ${isSelected? "bg-black/10 hover:bg-black/20" : "bg-white/10 hover:bg-white/20"}`}>✕</span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* ADD TOPIC - NO DROPDOWN */}
-        <div className="mb-4 card-enter" style={{animationDelay:'140ms'}}>
-          <AddTopic onAdd={addNew} selectedSubject={selectedSubject} dark={dark} />
-        </div>
-
-        {/* FILTER */}
-        <div className="mt-8 mb-2 -mx-4 px-4 sm:mx-0 sm:px-0 card-enter" style={{animationDelay:'200ms'}}>
-          <div className="flex gap-2 overflow-x-auto scrollbar-none items-center" style={{padding:'12px 4px 28px 4px', margin:'-12px 0 -20px 0'}}>
-            {["All",...subjects].map(s => {
-              const count = s === "All"? topics.length : topics.filter(t => t.subject === s).length;
-              const active = filter === s;
-              return (
-                <button key={s} onClick={() => setFilter(s)} className={`whitespace-nowrap px-4 py-2.5 rounded-full text-[13px] font-semibold border shrink-0 transition-all ${active? "bg-white text-black border-white" : "bg-zinc-900 border-zinc-700 text-zinc-400"}`}>
-                  {s} <span className="opacity-50 ml-1">{count}</span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {dueToday.length > 0 && (
-          <div className="mb-8 mt-4 card-enter" style={{animationDelay:'260ms'}}>
-            <h2 className="text-[11px] font-bold tracking-[0.14em] uppercase text-zinc-500 mb-3 px-1 flex items-center gap-2"><div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>Due Today • {dueToday.length}</h2>
-            <div className="grid gap-3">{dueToday.map(t => (<TopicCard key={t.id} topic={t} onRevise={handleRevise} onForget={handleForget} onDelete={remove} isDue dark={dark} />))}</div>
-          </div>
-        )}
-
-        <div className="pb-10 mt-6">
-          <h2 className={`text-[11px] font-bold tracking-[0.14em] uppercase mb-3 px-1 ${dark? "text-zinc-500" : "text-zinc-400"}`}>{filter} • {filtered.length}</h2>
-          <div className="grid gap-2.5">
-            {filtered.map(t => {
-              const d = new Date(t.nextDate); d.setHours(0,0,0,0);
-              const today = new Date(); today.setHours(0,0,0,0);
-              return (<TopicCard key={t.id} topic={t} onRevise={handleRevise} onForget={handleForget} onDelete={remove} isDue={d <= today} dark={dark} />);
-            })}
-          </div>
+    <div className={`min-h-screen ${theme}`}>
+      <div className="lg:grid lg:min-h-screen lg:grid-cols-[250px_minmax(0,1fr)]">
+        <div className="hidden lg:block"><div className="fixed inset-y-0 w-[250px]"><AppSidebar activeView={activeView} onNavigate={navigate} dark={dark} streak={streak} onToggleTheme={() => setDark((value) => !value)} /></div></div>
+        <div className="min-w-0">
+          <header className={`sticky top-0 z-20 flex h-16 items-center justify-between border-b px-4 backdrop-blur sm:px-8 ${dark ? "border-[#24304a] bg-[#080d19]/90" : "border-stone-200 bg-[#f8f8f6]/90"}`}>
+            <div className="flex items-center gap-3"><button onClick={() => setMobileMenuOpen(true)} className={`grid size-9 place-items-center rounded-lg lg:hidden ${dark ? "hover:bg-white/8" : "hover:bg-stone-100"}`} aria-label="Open navigation">☰</button><div><p className="text-sm font-semibold">{viewTitles[activeView]}</p><p className="hidden text-[11px] text-stone-500 sm:block">Build durable knowledge, one review at a time.</p></div></div>
+            <div className="flex items-center gap-1.5 sm:gap-2"><input ref={importInputRef} type="file" accept="application/json,.json" onChange={handleImport} className="hidden" /><button onClick={() => importInputRef.current?.click()} className={`rounded-lg border px-2.5 py-2 text-xs font-medium sm:px-3 ${dark ? "border-white/10 hover:bg-white/6" : "border-stone-200 bg-white hover:bg-stone-50"}`}>Import</button><button onClick={exportData} className={`rounded-lg border px-2.5 py-2 text-xs font-medium sm:px-3 ${dark ? "border-white/10 hover:bg-white/6" : "border-stone-200 bg-white hover:bg-stone-50"}`}>Export</button><button onClick={() => { if (confirm(`Delete all ${topics.length} topics? This cannot be undone.`)) clearAll(); }} className="rounded-lg px-2.5 py-2 text-xs font-medium text-red-500 hover:bg-red-500/10 sm:px-3">Clear</button></div>
+          </header>
+          <main className="mx-auto w-full max-w-7xl px-4 py-8 sm:px-8 lg:px-10">{page}</main>
         </div>
       </div>
+      {mobileMenuOpen && <div className="fixed inset-0 z-50 lg:hidden"><button className="absolute inset-0 bg-black/45" aria-label="Close navigation" onClick={() => setMobileMenuOpen(false)} /><div className="relative h-full w-[280px]"><AppSidebar activeView={activeView} onNavigate={navigate} dark={dark} streak={streak} onToggleTheme={() => setDark((value) => !value)} /></div></div>}
     </div>
   );
 }

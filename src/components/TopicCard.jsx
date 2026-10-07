@@ -1,79 +1,31 @@
+import { formatReviewDate, getDaysUntilReview } from "../utils/date";
+
 export default function TopicCard({ topic, onRevise, onForget, onDelete, isDue, dark }) {
-  const isDone = topic.level >= 1 && !isDue;
-
+  if (!topic) return null;
+  const level = topic.level ?? 0;
+  const isMastered = level >= 5;
+  const surface = dark ? "border-[#283552] bg-[#131b2d] hover:border-[#38507a]" : "border-stone-200 bg-white hover:border-stone-300";
+  const days = getDaysUntilReview(topic.nextDate);
   return (
-    <div
-      className={`
-        group relative rounded-[20px] border p-4 transition-all duration-500
-        ${isDue
-          ? "bg-[#fff5f5] border-[#fecaca]"
-          : isDone
-          ? dark
-            ? "bg-[#f0fdf4]/10 border-green-500/30"
-            : "bg-[#f0fdf4] border-[#bbf7d0]"
-          : dark
-            ? "bg-zinc-900/60 border-zinc-800 hover:border-zinc-700"
-            : "bg-white border-zinc-200 hover:border-zinc-300"
-        }
-      `}
-    >
-      <div className="flex justify-between items-start gap-3">
-        <div className="flex items-center gap-2.5">
-          <span
-            className={`
-              px-3 py-1 rounded-full text-[11px] font-bold tracking-wider uppercase
-              ${isDue ? "bg-red-600 text-white" : isDone ? "bg-green-600 text-white shadow-[0_0_10px_rgba(34,197,94,0.4)]" : "bg-zinc-900 text-white"}
-            `}
-          >
-            {topic.subject}
-          </span>
-          <span className={`text-[13px] font-medium flex items-center gap-1.5 ${isDue ? "text-red-600" : isDone ? "text-green-600" : dark ? "text-zinc-400" : "text-zinc-500"}`}>
-            <span className={`w-1 h-1 rounded-full ${isDue ? "bg-red-500" : isDone ? "bg-green-500" : "bg-zinc-400"}`}></span>
-            Lvl {topic.level} • {isDue ? "Due today" : `in ${[1, 3, 7, 15, 30][topic.level - 1] || 0}d`}
-          </span>
+    <article className={`group flex h-full flex-col rounded-2xl border p-4 transition-colors ${surface}`}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <span className={`inline-flex rounded-md px-2 py-1 text-[10px] font-bold uppercase tracking-wider ${dark ? "bg-white/8 text-stone-300" : "bg-stone-100 text-stone-600"}`}>{topic.subject || "General"}</span>
+          <h3 className="mt-3 break-words text-sm font-semibold leading-snug">{topic.name || topic.title}</h3>
         </div>
-
-        <button
-          onClick={() => {
-            if (confirm(`Delete "${topic.title}"?`)) onDelete(topic.id);
-          }}
-          className={`w-7 h-7 rounded-full border flex items-center justify-center text-[12px] transition-all hover:scale-110 ${dark && !isDone && !isDue ? "bg-zinc-800 border-zinc-700 text-zinc-400" : "bg-white border-zinc-200 text-zinc-400 hover:text-zinc-900"}`}
-        >
-          ✕
-        </button>
+        <button onClick={() => { if (confirm(`Delete “${topic.name || topic.title}”?`)) onDelete(topic.id); }} className="rounded-lg p-1 text-stone-400 opacity-0 transition-opacity hover:bg-red-500/10 hover:text-red-500 group-hover:opacity-100" aria-label="Delete topic">×</button>
       </div>
-
-      <h3 className={`text-[16px] font-semibold tracking-tight mt-3 ${isDue ? "text-zinc-900" : isDone ? (dark ? "text-green-100" : "text-green-900") : dark ? "text-white" : "text-zinc-900"}`}>
-        {topic.title}
-      </h3>
-
-      <div className="flex gap-2 mt-4">
-        <button
-          onClick={() => onForget(topic)}
-          className={`px-5 py-2.5 rounded-full text-[13px] font-semibold border transition-all active:scale-[0.96] ${isDone ? "bg-white border-green-200 text-green-700" : "bg-white border-zinc-200 text-zinc-600"}`}
-        >
-          Forgot
-        </button>
-
-        <button
-          onClick={() => onRevise(topic)}
-          className={`
-            flex-1 rounded-full py-2.5 text-[13px] font-bold transition-all active:scale-[0.98] flex items-center justify-center gap-1
-            ${isDue ? "bg-white text-zinc-900 border border-zinc-200 hover:bg-zinc-900 hover:text-white" : isDone ? "bg-green-600 text-white shadow-[0_0_20px_rgba(34,197,94,0.4)] hover:bg-green-700" : "bg-zinc-900 text-white hover:bg-black"}
-          `}
-        >
-          {isDone ? "✓ Revised" : isDue ? "✓ Revise Now" : "Revise"}
-        </button>
+      {topic.notes && <p className="mt-2 line-clamp-3 text-xs leading-relaxed text-stone-500 dark:text-stone-400">{topic.notes}</p>}
+      {topic.image && <img src={topic.image} alt="" className="mt-3 h-28 w-full rounded-xl object-cover" />}
+      {topic.voice && <audio controls src={topic.voice} className="mt-3 h-8 w-full" />}
+      <div className="mt-auto pt-4">
+        <div className="flex items-center justify-between text-[11px] text-stone-500 dark:text-stone-400"><span>{isDue ? "Ready to review" : `Review ${formatReviewDate(topic.nextDate)}`}</span><span>{isDue ? "Now" : `${days}d`}</span></div>
+        <div className="mt-2 flex gap-1">{[1, 2, 3, 4, 5].map((step) => <span key={step} className={`h-1 flex-1 rounded-full ${step <= level ? "bg-blue-500" : dark ? "bg-white/10" : "bg-stone-200"}`} />)}</div>
+        <div className="mt-4 grid grid-cols-2 gap-2">
+          <button onClick={() => onForget(topic)} className={`rounded-lg border px-3 py-2 text-xs font-medium ${dark ? "border-white/10 text-stone-300 hover:bg-white/6" : "border-stone-200 text-stone-600 hover:bg-stone-50"}`}>Need work</button>
+          <button onClick={() => onRevise(topic)} disabled={isMastered} className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-500 disabled:cursor-default disabled:bg-blue-600/60">{isMastered ? "Mastered" : "I remembered"}</button>
+        </div>
       </div>
-
-      <div className="flex gap-1.5 mt-4">
-        {Array.from({ length: 6 }).map((_, i) => (
-          <div
-            key={i}
-            className={`h-1.5 flex-1 rounded-full transition-all duration-700 ${i <= topic.level ? (isDone ? "bg-green-600" : isDue ? "bg-red-500" : "bg-zinc-900") : dark ? "bg-zinc-800" : "bg-zinc-200"}`}
-          ></div>
-        ))}
-      </div>
-    </div>
+    </article>
   );
 }
