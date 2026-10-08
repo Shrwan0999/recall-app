@@ -4,6 +4,7 @@ export default function AddTopic({ onAdd, selectedSubject, dark, compact = false
   const [name, setName] = useState("");
   const [notes, setNotes] = useState("");
   const [image, setImage] = useState(null);
+  const [showFullImage, setShowFullImage] = useState(false);
   const [voice, setVoice] = useState(null);
   const [isRecording, setIsRecording] = useState(false);
   const fileInputRef = useRef(null);
@@ -72,9 +73,39 @@ export default function AddTopic({ onAdd, selectedSubject, dark, compact = false
           <button type="button" onClick={() => fileInputRef.current?.click()} className={`rounded-lg border px-3 py-2 text-xs font-medium ${image ? "border-emerald-400 bg-emerald-500/10 text-emerald-600" : field}`}>{image ? "Image attached" : "Attach image"}</button>
           <button type="button" onClick={toggleRecording} className={`rounded-lg border px-3 py-2 text-xs font-medium ${isRecording ? "border-red-400 bg-red-500/10 text-red-500" : voice ? "border-emerald-400 bg-emerald-500/10 text-emerald-600" : field}`}>{isRecording ? "Stop recording" : voice ? "Voice attached" : "Voice note"}</button>
         </div>}
-        {image && <div className="relative"><img src={image} alt="Topic attachment" className="h-28 w-full rounded-xl object-cover" /><button type="button" onClick={() => setImage(null)} className="absolute right-2 top-2 rounded-md bg-black/70 px-2 py-1 text-xs text-white">Remove</button></div>}
+        {image && (
+  <div className="relative">
+    <img
+      src={image}
+      alt="Topic attachment"
+      onClick={() => setShowFullImage(true)}
+      className="h-28 w-full cursor-pointer rounded-xl object-cover"
+    />
+
+    <button
+      type="button"
+      onClick={() => setImage(null)}
+      className="absolute right-2 top-2 rounded-md bg-black/70 px-2 py-1 text-xs text-white"
+    >
+      Remove
+    </button>
+  </div>
+)}
         {voice && <audio src={voice} controls className="h-8 w-full" />}
         <button type="submit" className="w-full rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-500">Add topic</button>
+        {showFullImage && (
+  <div
+    onClick={() => setShowFullImage(false)}
+    className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+  >
+    <img
+      src={image}
+      alt="Full topic attachment"
+      onClick={(event) => event.stopPropagation()}
+      className="max-h-[90vh] max-w-[95vw] rounded-xl object-contain"
+    />
+  </div>
+)}
       </form>
     </section>
   );

@@ -1,4 +1,4 @@
-import { isDueDate } from "./date";
+  import { isDueDate } from "./date";
 
 export const REVIEW_INTERVALS = [0, 1, 3, 7, 15, 30, 60];
 
